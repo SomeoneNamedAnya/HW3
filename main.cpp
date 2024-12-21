@@ -3,83 +3,22 @@
 #include <sstream>
 #include <chrono>
 
+#include "thread_pool.h"
+
 using namespace std;
 using namespace std::chrono;
 
 constexpr std::array<pair<int, int>, 4> deltas{{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}};
-
-struct Fixed {
-    constexpr Fixed(int v): v(v << 16) {}
-    constexpr Fixed(float f): v(f * (1 << 16)) {}
-    constexpr Fixed(double f): v(f * (1 << 16)) {}
-    constexpr Fixed(): v(0) {}
-
-    static constexpr Fixed from_raw(int32_t x) {
-        Fixed ret;
-        ret.v = x;
-        return ret;
-    } 
-
-    int32_t v;
-    bool operator<(const Fixed & other) const {
-        return v < other.v;
+void copy_str(Fixed * fir, Fixed * sec,  size_t& cnt) {
+    for (int j = 0; j < cnt; j++) {
+        fir[j] = sec[j];
     }
-    bool operator>(const Fixed & other) const {
-        return v > other.v;
-    }
-
-    auto operator<=>(const Fixed&) const = default;
-    bool operator==(const Fixed&) const = default;
-};
-
-Fixed operator+(Fixed a, Fixed b) {
-    return Fixed::from_raw(a.v + b.v);
 }
-
-Fixed operator-(Fixed a, Fixed b) {
-    return Fixed::from_raw(a.v - b.v);
-}
-
-Fixed operator*(Fixed a, Fixed b) {
-    return Fixed::from_raw(((int64_t) a.v * b.v) >> 16);
-}
-
-Fixed operator/(Fixed a, Fixed b) {
-    return Fixed::from_raw(((int64_t) a.v << 16) / b.v);
-}
-
-Fixed &operator+=(Fixed &a, Fixed b) {
-    return a = a + b;
-}
-
-Fixed &operator-=(Fixed &a, Fixed b) {
-    return a = a - b;
-}
-
-Fixed &operator*=(Fixed &a, Fixed b) {
-    return a = a * b;
-}
-
-Fixed &operator/=(Fixed &a, Fixed b) {
-    return a = a / b;
-}
-
-Fixed operator-(Fixed x) {
-    return Fixed::from_raw(-x.v);
-}
-
-
-
-ostream &operator<<(ostream &out, Fixed x) {
-    return out << x.v / (double) (1 << 16);
-}
-
-
 
 class Simulation{
 public:
-    void init(vector<vector<char>> &te, size_t init_T) {
-        
+    void init(vector<vector<char>> &te, size_t init_T, ThreadPool * threads) {
+        thread_pool = threads;
 		Time = init_T;
         N = te.size();
         M = te[0].size();
@@ -121,6 +60,7 @@ public:
         }
 		
     }
+
     void start() {
         for (size_t i = 0; i < Time; ++i) {
             
@@ -137,11 +77,9 @@ public:
 
             // Apply forces from p
             for (int i = 0; i < N; i++) {
-                for (int j = 0; j < M; j++) {
-                    old_p[i][j] = p[i][j];
-                }
+                thread_pool->put(copy_str, ref(old_p[i]), ref(p[i]), ref(M));
             }
-
+            thread_pool -> wait();
             for (size_t x = 0; x < N; ++x) {
                 for (size_t y = 0; y < M; ++y) {
                     if (field[x][y] == '#')
@@ -224,10 +162,10 @@ public:
             }
 
             if (prop) {
-                //cout << "Tick " << i << ":\n";
+                cout << "Tick " << i << ":\n";
                 for (size_t x = 0; x < N; ++x) {
                     //Не будем выводить результат на экран так как это  
-                    //cout << field[x] << "\n";
+                    cout << field[x] << "\n";
                 }
             }
         }
@@ -410,6 +348,7 @@ public:
     }
 
 private:
+    ThreadPool * thread_pool;
     size_t N;
     size_t M;
     Fixed g;
@@ -418,6 +357,7 @@ private:
     char** field;
     Fixed ** p, ** old_p;
     size_t Time;
+
     
     struct VectorField {
         size_t N, M;
@@ -481,6 +421,10 @@ private:
 
 
 int main() {
+    cout << "Максимальное возможное количество потоков: " << std::thread::hardware_concurrency() << endl;
+    int thread_cnt;
+    cin >> thread_cnt;
+    ThreadPool threads(thread_cnt);
 
     string filename = "input.txt";
     int input_n, input_m, input_Time;
@@ -509,7 +453,7 @@ int main() {
     // Замер времени симуляции
 
     Simulation sim;
-    sim.init(te, input_Time);
+    sim.init(te, input_Time, &threads);
 
     auto start = high_resolution_clock::now();
 
@@ -519,6 +463,6 @@ int main() {
 
     auto duration = duration_cast<microseconds>(stop - start);
 
-    cout << duration.count() << endl;
+    cout << "Время выполнения: " << duration.count() << endl;
 
 }
