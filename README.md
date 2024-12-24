@@ -125,4 +125,5 @@ size_t i = (dx == 0? (dy < 0 ? 2 : 3) : (dx < 0? 0: 1));
 
 Запускать:
 g++ -std=c++20  main.cpp fixed_and_thread_pool.h -o main.exe
+
 ./main.exe
