@@ -3,7 +3,7 @@
 #include <sstream>
 #include <chrono>
 
-#include "fixed_and_thread_pool.h"
+#include "thread_pool.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -14,6 +14,12 @@ void copy_str(Fixed * fir, Fixed * sec,  size_t& cnt) {
         fir[j] = sec[j];
     }
 }
+void clear_func(array<Fixed, 4> * v, size_t& cnt) {
+    for (int j = 0; j < cnt; j++) {
+        v[j] = {};
+    }
+}
+
 
 class Simulation{
 public:
@@ -27,8 +33,8 @@ public:
         rho['.'] = 1000;
         g = 0.1;
  
-        velocity.init(N, M);
-        velocity_flow.init(N, M);
+        velocity.init(N, M, threads);
+        velocity_flow.init(N, M, threads);
 
         field = new char*[N]{};
         dirs = new int*[N]{};
@@ -164,7 +170,7 @@ public:
             if (prop) {
                 cout << "Tick " << i << ":\n";
                 for (size_t x = 0; x < N; ++x) {
-                    //Не будем выводить результат на экран так как это  
+                      
                     cout << field[x] << "\n";
                 }
             }
@@ -219,10 +225,9 @@ public:
         }
         if (ret) {
             if (!is_first) {
-                ParticleParams pp{};
-                pp.swap_with(x, y, field, p, velocity);
-                pp.swap_with(nx, ny, field, p, velocity);
-                pp.swap_with(x, y, field, p, velocity);
+                swap(field[x][y], field[nx][ny]);
+                swap(p[x][y], p[nx][ny]);
+                swap(velocity.v[x][y], velocity.v[nx][ny]);
             }
         }
         return ret;
@@ -358,23 +363,23 @@ private:
     Fixed ** p, ** old_p;
     size_t Time;
 
-    
     struct VectorField {
         size_t N, M;
-        void init(size_t _N, size_t _M){
+        ThreadPool * thread_pool;
+        void init(size_t _N, size_t _M, ThreadPool * _thread_pool){
             N= _N;
             M = _M;
+            thread_pool = _thread_pool;
             v = new array<Fixed, deltas.size()>*[N]{};
             for (int i = 0; i < N; i++) {
-                 v[i] = new array<Fixed, deltas.size()>[M]{};
+                v[i] = new array<Fixed, deltas.size()>[M]{};
             }
         }
         void clear() {
             for (int i = 0; i < N; i++) {
-                for (int j = 0; j < M; j++) {
-                 v[i][j] = {};
-                }
+                thread_pool->put(clear_func, ref(v[i]), ref(M));
             }
+            thread_pool -> wait();
         }
         ~VectorField() {
             
@@ -385,7 +390,7 @@ private:
             if (v != nullptr) {
                 delete[] v;
             }
-           
+            
         }
         array<Fixed, deltas.size()> ** v;
         Fixed &add(int x, int y, int dx, int dy, Fixed dv) {
@@ -393,28 +398,17 @@ private:
         }
 
         Fixed &get(int x, int y, int dx, int dy) {
-            size_t i = ranges::find(deltas, pair(dx, dy)) - deltas.begin();
-            assert(i < deltas.size());
+            size_t i = (dx == 0? (dy < 0 ? 2 : 3) : (dx < 0? 0: 1));
             return v[x][y][i];
-        }
+        } 
     };
+
 
     VectorField velocity;
     VectorField velocity_flow;
     int** last_use;
     int UT = 0;
 
-    struct ParticleParams {
-        char type;
-        Fixed cur_p;
-        array<Fixed, deltas.size()> v;
-
-        void swap_with(int x, int y, char** field , Fixed ** p, VectorField &velocity) {
-            swap(field[x][y], type);
-            swap(p[x][y], cur_p);
-            swap(velocity.v[x][y], v);
-        }
-    };
     mt19937 rnd;
 
 };
